@@ -1,0 +1,259 @@
+---
+title: "pourahmadiWang"
+author: "Marthyna Luiza Weber"
+date: "2023-03-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We begin by giving two examples of chordal graphs, one unordered and the other ordered, to later show the impact of the ordering factor in the correct setting of zeros in the correlation matrix:
+```{r}
+library(gmat)
+library(igraph)
+
+# An example of a graph that does not work
+bad_adj <- matrix(0,7,7)
+edges <- rbind(c(1,2),c(1,3),c(2,3),c(2,4),c(2,5),c(3,6),c(3,7),c(4,5),c(6,7))
+bad_adj[edges] <- 1
+bad_adj <- bad_adj+t(bad_adj)
+g.bad_adj <- graph_from_adjacency_matrix(bad_adj)
+print(paste("Is the graph chordal? ", is.chordal(g.bad_adj)$chordal))
+plot(as.undirected(g.bad_adj))
+plot(as.undirected(ug_to_dag(g.bad_adj))) # ug_to_diag does not change anything
+diag(bad_adj) <- 1
+
+# An example of a graph that works
+good_adj <- matrix(0,7,7)
+edges <- rbind(c(1,2),c(1,3),c(2,3),c(3,4),c(3,5),c(4,5),c(5,6),c(5,7),c(6,7))
+good_adj[edges] <- 1
+good_adj <- good_adj+t(good_adj)
+g.good_adj <- graph_from_adjacency_matrix(good_adj)
+print(paste("Is the graph chordal? ", is.chordal(g.good_adj)$chordal))
+plot(as.undirected(g.good_adj))
+plot(as.undirected(ug_to_dag(g.good_adj))) # ug_to_diag does not change anything
+diag(good_adj) <- 1
+```
+
+We are interested in retrieving the position of the zero's in the adjacency matrix of the graph and impose them in the matrix $B$ of Pourahmadi's method. We modified the `randcorr` implementation to add this setting, by forcing values of $\pi/2$ in matrix $\Theta$ for every 0 in the adjacency matrix of the graph. 
+```{r modified randcorr function}
+library(randcorr)
+# m is the adjacency matrix of the chordal graph
+randcorr_force_zeros <- function(p, m)
+{
+  # Check inputs
+  if (length(p)>1 || p<2 || p%%1) {
+    stop("p must be a scalar integer greater than 1.")
+  }
+  
+  # Step 1 - generate angles theta from PDF (sin(theta))^k, k>=1, 0<theta<pi
+  e = matrix(1,p,1)
+  theta = matrix(0,p,p)
+  for(j in 1 : (p-1)) {
+    theta[(j+1):p,j] = randcorr.sample.sink( (p-j)*e[(j+1):p] )
+  }
+  
+  # Sets 0's according to the adjacency matrix
+  for (i in 1:nrow(m)) {
+    for (j in 1:i) {
+      
+      # Check if the value is 0
+      if (m[i, j] == 0 && i!=j) {
+        
+        # Impose a pi/2 in the theta matrix in the same position
+        theta[i,j] = pi/2
+      }
+    }
+  }
+  
+  print(round(theta, 3))
+  
+  # Step 2 - construct lower triangular Cholesky factor
+  L = matrix(1,p,p)
+  for (i in 2 : p) {
+    L[i,2:i] = cumprod( sin(theta[i,1:(i-1)]) )
+  }
+  
+  R = cos(theta)
+  R[upper.tri(R)] = 0
+  
+  L = L * R
+  
+  # Form correlation matrix
+  C = L %*% t(L)
+
+  return(C)
+}
+```
+
+Generating matrix R with the unordered graph:
+```{r creating matrix R}
+# generation of the adjacency matrix with Pourhamadi, 
+# forcing the zeros in the cholesky matrix
+R <- randcorr_force_zeros(nrow(bad_adj), bad_adj)
+print("Matrix R:")
+print(zapsmall(R, digits = 15))
+print(paste("Total zeros in matrix R: ", sum(zapsmall(R, digits = 15) == 0)))
+
+#resulting adjacency
+print("Resulting adjacency: ")
+print( 1*(zapsmall(R, digits = 15)!=0))
+
+# wanted adjacency
+print("Desired adjacency: ")
+print(bad_adj)
+print("Total zeros in the adjacency matrix: ")
+print(sum(bad_adj == 0))
+
+# number of additional edges
+print("Number of additional edges: ")
+print(sum(1*(zapsmall(R, digits = 15)!=0)!=bad_adj)/2)
+```
+
+Here we plot the elliptope for the distribution of correlation matrices with the modified hyper-spherical parameterization of the Cholesky factorization method and the incorrect graph generation method. As done in Cordoba et al. (2019), the code below generates a random undirected graph G using the Erdos-Renyi method, then transforms it into a chordal graph $\tilde G$, without correctly checking for the ordering of nodes:
+```{r modified_elliptope}
+library(plotly)
+adj <- matrix(0,3,3)
+edges <- rbind(c(1,2),c(2,3))
+adj[edges] <- 1
+adj <- adj+t(adj)
+g.adj <- graph_from_adjacency_matrix(adj)
+print(paste("Is the graph chordal? ", is.chordal(g.adj)$chordal))
+plot(as.undirected(g.adj))
+plot(as.undirected(ug_to_dag(g.adj))) # ug_to_diag does not change anything
+V(g.adj)$order <- c(1,3,2)
+diag(adj) <- 1
+
+# Generate the correlation matrices
+matrices <- list()
+for (i in 1:5000) {
+  cor_matrix <- randcorr_force_zeros(3, adj)
+  matrices[[i]] <- cor_matrix
+}
+
+# Convert the correlation matrices to vectors in the elliptope
+elliptope_vectors <- t(sapply(matrices, function(mat) {
+  upper_triangular_part <- mat[upper.tri(mat, diag = FALSE)]
+  return(upper_triangular_part)
+}))
+
+# Plot the elliptope using plotly
+plot_ly(x = elliptope_vectors[, 1], y = elliptope_vectors[, 2], z = elliptope_vectors[, 3], type = "scatter3d", mode = "markers", marker = list(size = 2))
+```
+
+Now 
+```{r}
+# generation of the adjacency matrix with Pourhamadi, 
+# forcing the zeroes in the cholesky matrix
+R <- randcorr_force_zeros(nrow(bad_adj), bad_adj)
+print(zapsmall(R, digits = 15))
+print(sum(zapsmall(R, digits = 15) == 0))
+
+#resulting adjacency
+print(1*(zapsmall(R, digits = 15)!=0))
+
+# wanted adjacency
+bad_adj
+print(sum(bad_adj == 0))
+
+# number of additional edges
+sum(1*(zapsmall(R, digits = 15)!=0)!=adj)/2
+```
+
+
+We want to check the values B[i,j] and R[i,j] when A[i,j] is zero:
+```{r Comparing values of B[i,j] and R[i,j] when A[i,j] is zero}
+for(i in 1:n) {
+  for(j in 1:n){
+    if(A[i,j] == 0 && j<i) {
+      cat(i,j,B[i,j],R[i,j], "\n")
+    }
+  }
+}
+```
+We can see that B[i, j] is always 0 when A[i,j] is, but the same is not always true for R[i,j].
+
+```{r Generating R using randcorr}
+pourahmadi_mat = randcorr_force_zeros(10, A)
+cat("Pourahmadi matrix:\n")
+print(sum(abs(pourahmadi_mat[lower.tri(pourahmadi_mat)]) < 1e-5))
+print(zapsmall(pourahmadi_mat, digits = 15))
+```
+We have some zeros in the same position as in L, but some are still missing.
+
+Then simulate correlation matrices both with Cordoba and Pourahmadi methods and compare the distribution of their entries (plot histograms):
+```{r plor chordoba's histogram}
+chordoba_mat <- as.matrix(gmat::port_chol(N=1, ug = chg)[,,1])
+
+print(sum(abs(chordoba_mat[lower.tri(chordoba_mat)]) < 1e-5))
+chordoba_mat
+
+# Plot histogram of entries in lower and upper triangular parts
+hist(chordoba_mat[lower.tri(chordoba_mat)], breaks = 15)
+```
+
+```{r plot pourahmadi's histogram}
+# Get only off-diagonal values (don't count the 1's in the diagonal)
+idx <- !diag(rep(TRUE, nrow(pourahmadi_mat))) & upper.tri(pourahmadi_mat) | lower.tri(pourahmadi_mat)
+
+# Plot histogram of entries in lower and upper triangular parts
+hist(pourahmadi_mat[idx], breaks = 15)
+```
+
+```{r include=FALSE}
+# [0 1 0 0 0 1; 1 0 1 1 0 1; 0 1 0 1 0 0; 0 1 1 0 1 1; 0 0 0 1 0 1; 1 1 0 1 1 0]
+adj_matrix <- matrix(0:0, 6, 6)
+adj_matrix[1,2] <- 1
+adj_matrix[1,6] <- 1
+adj_matrix[2,1] <- 1
+adj_matrix[2,3] <- 1
+adj_matrix[3,2] <- 1
+adj_matrix[3,4] <- 1
+adj_matrix[4,3] <- 1
+adj_matrix[4,5] <- 1
+adj_matrix[5,4] <- 1
+adj_matrix[5,6] <- 1
+adj_matrix[6,1] <- 1
+adj_matrix[6,5] <- 1
+```
+
+```{r}
+library(Matrix)
+
+# Generate a random positive definite correlation matrix
+R <- cor(matrix(rnorm(9), ncol = 3))
+
+# Compute the Cholesky factorization
+B <- t(chol(R))
+
+# Check that the rows of the normalized Cholesky factor sum to 1
+round(rowSums(B^2), 10)
+
+zapsmall(B, 5)
+```
+
+```{r}
+library(igraph)
+
+# Set up graph structure
+set.seed(123)
+g <- erdos.renyi.game(5, 0.3) # random graph with 10 vertices and 0.3 probability of edge
+
+# Generate correlation matrix with zeros
+corr_matrix <- matrix(0, ncol = vcount(g), nrow = vcount(g))
+edge_list <- get.edgelist(g)
+for (i in 1:nrow(edge_list)) {
+  corr_val <- runif(1, 0.2, 1)
+  corr_matrix[edge_list[i,1], edge_list[i,2]] <- corr_val
+  corr_matrix[edge_list[i,2], edge_list[i,1]] <- corr_val
+  E(g)[edge_list[i,1] %--% edge_list[i,2]]$label <- round(corr_val, 2)
+}
+diag(corr_matrix) <- 1
+
+# Plot the graph and correlation matrix
+plot(g, vertex.label=1:vcount(g), vertex.size=20, edge.label=E(g)$label, edge.width=2)
+corr_matrix
+```
+

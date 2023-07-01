@@ -1,0 +1,34 @@
+---
+title: "Multivariate Gaussian Distribution"
+author: "Marthyna Luiza Weber"
+date: "2023-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Plotting a multivariate Gaussian distribution
+```{r generateMVD}
+library(MASS)
+library(mvtnorm)
+library(ggplot2)
+
+# Define the mean vector and covariance matrix
+mu <- c(0, 2)
+Sigma <- matrix(c(10,3,3,2),2,2)
+
+# Generate random samples from the multivariate normal distribution
+samples <-mvrnorm(n = 1000, mu, Sigma)
+
+# Create a data frame from the samples
+samples <- as.data.frame(samples)
+
+# Plot the multivariate normal distribution
+ggplot(samples, aes(x=V1, y=V2))+
+  geom_point(alpha = .2) +
+  geom_density_2d()+
+  theme_bw()
+```
+

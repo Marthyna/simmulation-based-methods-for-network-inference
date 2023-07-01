@@ -1,0 +1,107 @@
+---
+title: "lewandowski"
+author: "Marthyna Luiza Weber"
+date: "2023-04-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r generate_corr_matrix}
+generate_corr_matrix <- function(d, eta) {
+  # Initialize beta
+  beta <- eta + (d-1)/2
+  
+  # Initialize the correlation matrix
+  R <- matrix(0,d,d)
+  
+  # Loop through k = 1 to d-1
+  for (k in 1:(d-1)) {
+    # Update beta
+    beta <- beta - 1/2
+    
+    R[k,k] = 1
+    
+    # Loop through i = k+1 to d
+    for (i in (k+1):d) {
+      # Generate the beta-distributed random variable
+      p_ki <- 2 * rbeta(1, beta, beta) - 1
+      
+      # Calculate partial correlation q_ki using recursive formula
+      q_ki <- (R[k,i] - R[k,] * R[i,] * R[i,i]) / sqrt((1 - R[k,]^2) * (1 - R[i,]^2))
+      
+      # Set p_ki as partial correlation q_ki
+      R[k,i] <- p_ki
+      R[i,k] <- p_ki
+    }
+  }
+  R[d,d] = 1
+  return(as.matrix(R))
+}
+```
+
+```{r}
+R <- generate_corr_matrix(3, 2)
+print(R)
+```
+
+```{r plotElliptope}
+library(plotly)
+library(clusterGeneration)
+
+get_elliptope_vector <- function(mat) {
+  upper_triangular_part <- mat[upper.tri(mat, diag = FALSE)]
+  return(upper_triangular_part)
+}
+# Generate the correlation matrices (have to use cov2cor to get correlation matrix)
+matrices <- replicate(5000, cov2cor(genPositiveDefMat(3, covMethod = "c-vine")$Sigma), simplify = FALSE)
+
+# Convert the correlation matrices to vectors in the elliptope
+elliptope_vectors <- t(sapply(matrices, get_elliptope_vector))
+
+# Plot the elliptope using plotly
+plot_ly(x = elliptope_vectors[, 1], y = elliptope_vectors[, 2], z = elliptope_vectors[, 3], type = "scatter3d", mode = "markers", marker = list(size = 2)) %>% layout(title = "Elliptope of 5000 Random 3x3 Correlation Matrices using the C-vines method")
+```
+
+```{r}
+matrices <- replicate(5000, cov2cor(genPositiveDefMat(3, covMethod = "onion")$Sigma), simplify = FALSE)
+
+# Convert the correlation matrices to vectors in the elliptope
+elliptope_vectors <- t(sapply(matrices, get_elliptope_vector))
+
+# Plot the elliptope using plotly
+plot_ly(x = elliptope_vectors[, 1], y = elliptope_vectors[, 2], z = elliptope_vectors[, 3], type = "scatter3d", mode = "markers", marker = list(size = 2)) %>% layout(title = "Elliptope of 5000 Random 3x3 Correlation Matrices using the Onion method")
+```
+
+```{r plotElliptopePourahmadi, fig.width=10}
+library(randcorr)
+# Generate the correlation matrices
+matrices <- replicate(5000, randcorr(3), simplify = FALSE)
+
+# Convert the correlation matrices to vectors in the elliptope
+elliptope_vectors <- t(sapply(matrices, get_elliptope_vector))
+
+# Plot the elliptope using plotly
+plot_ly(x = elliptope_vectors[, 1], y = elliptope_vectors[, 2], z = elliptope_vectors[, 3], type = "scatter3d", mode = "markers", marker = list(size = 2)) %>% layout(title = "Elliptope of 5000 Random 3x3 Correlation Matrices using Pourahamdi's method")
+```
+
+```{r plotElliptopeCordoba}
+library(igraph)
+library(gmat)
+
+cordoba <- function(n) {
+  g <- erdos.renyi.game(n, 0.5, type = "gnp", directed = FALSE)
+  chg <- as.undirected(ug_to_dag(g))
+  as.matrix(gmat::port_chol(N=1, ug = chg)[,,1])
+}
+# Generate the correlation matrices
+matrices <- replicate(10000, cordoba(3), simplify = FALSE)
+
+# Convert the correlation matrices to vectors in the elliptope
+elliptope_vectors <- t(sapply(matrices, get_elliptope_vector))
+
+# Plot the elliptope using plotly
+plot_ly(x = elliptope_vectors[, 1], y = elliptope_vectors[, 2], z = elliptope_vectors[, 3], type = "scatter3d", mode = "markers", marker = list(size = 2)) %>% layout(title = "Elliptope of 5000 Random 3x3 Correlation Matrices using Cordoba's method")
+```
